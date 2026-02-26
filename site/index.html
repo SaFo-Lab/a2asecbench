@@ -180,6 +180,120 @@
     ]
   }
   </script>
+
+  
+  <script type="text/javascript" src="https://unpkg.com/vis-network@9.0.0/dist/vis-network.min.js"></script>
+  <style>
+    #threatModelGraph {
+      width: 100%;
+      height: 560px;
+      border: 1px solid #d7d7d7;
+      border-radius: 12px;
+      background: radial-gradient(circle at 30% 20%, #f8fbff 0%, #ffffff 55%, #f6f8fb 100%);
+    }
+
+    .threat-legend {
+      margin-top: 0.9rem;
+      display: flex;
+      flex-wrap: wrap;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.88rem;
+      color: #374151;
+    }
+
+    .legend-title {
+      font-weight: 600;
+      margin-right: 0.2rem;
+      color: #111827;
+    }
+
+    .legend-chip {
+      padding: 0.18rem 0.58rem;
+      border-radius: 999px;
+      color: #ffffff;
+      font-weight: 600;
+      line-height: 1.2;
+    }
+
+    .legend-chip.knowledge {
+      background: #6f95bf;
+    }
+
+    .legend-chip.capabilities {
+      background: #5f9a74;
+    }
+
+    .legend-chip.goals {
+      background: #c17777;
+    }
+
+    .legend-shape {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border: 1px solid #d1d5db;
+      border-radius: 8px;
+      padding: 0.16rem 0.5rem;
+      background: #ffffff;
+      color: #1f2937;
+      font-weight: 500;
+    }
+
+    .shape-icon {
+      width: 12px;
+      height: 12px;
+      border: 1.8px solid #4b5563;
+      background: #f9fafb;
+    }
+
+    .shape-icon.circle {
+      border-radius: 50%;
+    }
+
+    .shape-icon.square {
+      border-radius: 2px;
+    }
+
+    .shape-icon.hexagon {
+      border-radius: 0;
+      clip-path: polygon(24% 0, 76% 0, 100% 50%, 76% 100%, 24% 100%, 0 50%);
+    }
+
+    .attack-details-panel {
+      margin-top: 0.85rem;
+      border: 1px solid #d1d5db;
+      border-radius: 10px;
+      background: #ffffff;
+      padding: 0.9rem 1rem;
+      min-height: 114px;
+    }
+
+    .attack-details-panel h3 {
+      margin: 0;
+      font-size: 1.02rem;
+      color: #111827;
+    }
+
+    .attack-details-panel p {
+      margin: 0.45rem 0 0;
+      color: #374151;
+      font-size: 0.94rem;
+    }
+
+    .attack-details-panel ul {
+      margin: 0.5rem 0 0.1rem 1.05rem;
+      color: #1f2937;
+      font-size: 0.92rem;
+    }
+
+    @media (max-width: 768px) {
+      #threatModelGraph {
+        height: 460px;
+      }
+    }
+  </style>
+
 </head>
 <body>
 
@@ -383,9 +497,373 @@ to secure the next generation of agentic ecosystems.
 
 <section class="section">
   <div class="container is-max-desktop">
-    <h2 class="title is-3 has-text-centered">Threat Demonstration</h2>
+    <h2 class="title is-3 has-text-centered">Threat Models</h2>
     <div class="content has-text-justified">
+      Adversary can exploit vulnerabilities in the agent discovery and trust mechanisms. By publishing spoofed AgentCards (AgentCard Spoofing) in the public registry, the attacker can mislead the system into trusting a malicious agent. Through Capability Cloaking (CC), the adversary hides malicious functionalities within an agent's backend, allowing it to bypass standard checks. Once admitted into the trusted network, the adversary can leverage this agent to disrupt the system's operations. This may include degrading system availability through attacks like Cycle Overflow (CO) and Half-Open Task Flooding (HOTF), or compromising integrity and confidentiality by utilizing techniques such as Agent-Side Request Forgery (ASRF) and Artifact-Triggered Script Injection (ATSI). 
     </div>
+    <!-- Graph Container -->
+    <div id="threatModelGraph"></div>
+    <div class="threat-legend" aria-label="Threat model legend">
+      <span class="legend-title">Colors:</span>
+      <span class="legend-chip knowledge">Knowledge</span>
+      <span class="legend-chip capabilities">Capabilities</span>
+      <span class="legend-chip goals">Goals</span>
+      <span class="legend-title">Shapes:</span>
+      <span class="legend-shape"><span class="shape-icon hexagon"></span>Attack Nodes</span>
+      <span class="legend-shape"><span class="shape-icon circle"></span>Knowledge/Capability/Goal Nodes</span>
+    </div>
+    <div id="attackDetailsPanel" class="attack-details-panel" aria-live="polite">
+      <h3 id="attackDetailsTitle">Click a hexagonal attack node to view threat model in detail</h3>
+      <p id="attackDetailsDescription">Select an attack to view its mapped Knowledge, Capabilities, and Goals elements.</p>
+      <ul id="attackDetailsList"></ul>
+    </div>
+    <script type="text/javascript">
+      (function () {
+        var container = document.getElementById('threatModelGraph');
+        var detailTitle = document.getElementById('attackDetailsTitle');
+        var detailDescription = document.getElementById('attackDetailsDescription');
+        var detailList = document.getElementById('attackDetailsList');
+
+        if (!container || typeof vis === 'undefined') {
+          return;
+        }
+
+        var palette = {
+          knowledge: { bg: 'rgba(111, 149, 191, 0.82)', border: 'rgba(84, 118, 157, 0.9)' },
+          capabilities: { bg: 'rgba(95, 154, 116, 0.82)', border: 'rgba(67, 115, 86, 0.9)' },
+          goals: { bg: 'rgba(193, 119, 119, 0.82)', border: 'rgba(150, 82, 82, 0.9)' },
+          attack: { bg: 'rgba(51, 65, 85, 0.88)', border: 'rgba(15, 23, 42, 0.95)' }
+        };
+
+        function colorFor(track) {
+          var c = palette[track] || palette.knowledge;
+          return {
+            background: c.bg,
+            border: c.border,
+            highlight: { background: c.border, border: '#111827' },
+            hover: { background: c.border, border: '#111827' }
+          };
+        }
+
+        function shapeFor(kind) {
+          if (kind === 'attack') {
+            return 'hexagon';
+          }
+          return 'dot';
+        }
+
+        function sizeFor(kind) {
+          if (kind === 'attack') {
+            return 12;
+          }
+          if (kind === 'knowledge') {
+            return 10;
+          }
+          return 9.5;
+        }
+
+        function fontFor(kind) {
+          if (kind === 'attack') {
+            return { size: 12, face: 'Inter', color: '#f8fafc', strokeWidth: 1, strokeColor: '#1f2937' };
+          }
+          return { size: 12, face: 'Inter', color: '#0f172a', strokeWidth: 1, strokeColor: '#ffffff' };
+        }
+
+        function laneCenterX(nodeId) {
+          if (nodeId.indexOf('k') === 0) {
+            return -230;
+          }
+          if (nodeId.indexOf('atk_') === 0) {
+            return -20;
+          }
+          if (nodeId.indexOf('c') === 0) {
+            return 190;
+          }
+          return 360;
+        }
+
+        function randomPositionFor(nodeId) {
+          return {
+            x: laneCenterX(nodeId) + ((Math.random() - 0.5) * 240),
+            y: (Math.random() - 0.5) * 470
+          };
+        }
+
+        var rawNodes = [
+          { id: 'k1', label: 'Capability\nDiscovery', kind: 'knowledge', track: 'knowledge', x: -420, y: -240, title: '<b>Capability Discovery</b><br>Knowledge of how agents discover and expose capabilities.' },
+          { id: 'k2', label: 'Task\nOrchestration', kind: 'knowledge', track: 'knowledge', x: -420, y: -140, title: '<b>Task Orchestration</b><br>Knowledge of task flow and orchestration behavior across agents.' },
+          { id: 'k3', label: 'Task\nDependencies', kind: 'knowledge', track: 'knowledge', x: -420, y: -40, title: '<b>Task Dependencies</b><br>Knowledge of dependency chains and lifecycle coupling between tasks.' },
+          { id: 'k4', label: 'Capability\nChecks', kind: 'knowledge', track: 'knowledge', x: -420, y: 60, title: '<b>Capability Checks</b><br>Knowledge of validation logic for advertised capabilities.' },
+          { id: 'k5', label: 'Internal URI', kind: 'knowledge', track: 'knowledge', x: -420, y: 160, title: '<b>Internal URI</b><br>Knowledge of internal callback, fetch, and service URI surfaces.' },
+          { id: 'k6', label: 'Runtime Behavior\nof Agents', kind: 'knowledge', track: 'knowledge', x: -420, y: 260, title: '<b>Runtime Behavior of Agents</b><br>Knowledge of dynamic execution behavior and runtime state transitions.' },
+
+          { id: 'atk_as', label: 'AS', kind: 'attack', track: 'attack', x: -40, y: -210, title: '<b>AS: AgentCard Spoofing</b><br>Spoofing identity metadata in discovery channels.' },
+          { id: 'atk_cc', label: 'CC', kind: 'attack', track: 'attack', x: -40, y: -110, title: '<b>CC: Capability Cloaking</b><br>Masking malicious runtime behavior behind benign capability claims.' },
+          { id: 'atk_co', label: 'CO', kind: 'attack', track: 'attack', x: -40, y: -10, title: '<b>CO: Cycle Overflow</b><br>Creating cyclic task relationships to disrupt orchestration.' },
+          { id: 'atk_hotf', label: 'HOTF', kind: 'attack', track: 'attack', x: -40, y: 90, title: '<b>HOTF: Half-Open Task Flooding</b><br>Flooding the system with incomplete task sessions.' },
+          { id: 'atk_asrf', label: 'ASRF', kind: 'attack', track: 'attack', x: -40, y: 190, title: '<b>ASRF: Agent-Side Request Forgery</b><br>Abusing agent-side requests to reach unintended endpoints.' },
+          { id: 'atk_atsi', label: 'ATSI', kind: 'attack', track: 'attack', x: -40, y: 290, title: '<b>ATSI: Artifact-Triggered Script Injection</b><br>Injecting malicious script content via shared artifacts.' },
+
+          { id: 'c1', label: 'Modifying Agent\nMetadata', kind: 'element', track: 'capabilities', x: 250, y: -150, title: '<b>Modifying Agent Metadata</b><br>Ability to alter advertised identity or capability metadata.' },
+          { id: 'c2', label: 'Exploiting Protocol\nWeaknesses', kind: 'element', track: 'capabilities', x: 250, y: -20, title: '<b>Exploiting Protocol Weaknesses</b><br>Ability to exploit logic flaws in protocol workflows.' },
+          { id: 'c3', label: 'Injecting Malicious\nContent', kind: 'element', track: 'capabilities', x: 250, y: 110, title: '<b>Injecting Malicious Content</b><br>Ability to inject active or deceptive payloads into exchanged data.' },
+          { id: 'c4', label: 'Lack of Input\nValidation', kind: 'element', track: 'capabilities', x: 250, y: 240, title: '<b>Exploiting Lack of Input Validation</b><br>Ability to abuse weak validation and sanitization controls.' },
+
+          { id: 'g1', label: 'Exploiting\nTrust', kind: 'element', track: 'goals', x: 500, y: -190, title: '<b>Exploiting Trust</b><br>Goal of abusing implicit trust relationships between agents.' },
+          { id: 'g2', label: 'Disruption', kind: 'element', track: 'goals', x: 500, y: -60, title: '<b>Disruption</b><br>Goal of degrading or interrupting normal task execution.' },
+          { id: 'g3', label: 'Data Exfiltration\nand Manipulation', kind: 'element', track: 'goals', x: 500, y: 70, title: '<b>Data Exfiltration and Manipulation</b><br>Goal of stealing, modifying, or misusing sensitive data.' },
+          { id: 'g4', label: 'Undetected\nMalicious Actions', kind: 'element', track: 'goals', x: 500, y: 200, title: '<b>Undetected Malicious Actions</b><br>Goal of operating stealthily while bypassing checks.' },
+          { id: 'g5', label: 'Resource\nExhaustion', kind: 'element', track: 'goals', x: 500, y: 330, title: '<b>Resource Exhaustion</b><br>Goal of exhausting compute, queues, or orchestration capacity.' }
+        ];
+
+        var attackMapping = {
+          atk_as: { k: ['k1'], c: ['c1'], g: ['g1', 'g3'] },
+          atk_cc: { k: ['k1', 'k4', 'k6'], c: ['c1', 'c2'], g: ['g1', 'g3', 'g4'] },
+          atk_co: { k: ['k2', 'k3'], c: ['c2', 'c4'], g: ['g2', 'g5'] },
+          atk_hotf: { k: ['k2', 'k6'], c: ['c2', 'c4'], g: ['g2', 'g5'] },
+          atk_asrf: { k: ['k5', 'k6'], c: ['c3', 'c4'], g: ['g3'] },
+          atk_atsi: { k: ['k6'], c: ['c3'], g: ['g3', 'g4'] }
+        };
+
+        var nodes = new vis.DataSet(
+          rawNodes.map(function (n) {
+            var pos = randomPositionFor(n.id);
+            return {
+              id: n.id,
+              label: n.label,
+              title: n.title,
+              kind: n.kind,
+              shape: shapeFor(n.kind),
+              color: colorFor(n.track),
+              size: sizeFor(n.kind),
+              font: fontFor(n.kind),
+              margin: 5,
+              borderWidth: 1,
+              x: pos.x,
+              y: pos.y,
+              fixed: false
+            };
+          })
+        );
+
+        function edge(from, to) {
+          return {
+            from: from,
+            to: to,
+            smooth: false,
+            color: { color: 'rgba(71, 85, 105, 0.42)', highlight: '#1f2937', hover: '#1f2937' },
+            width: 1.4
+          };
+        }
+
+        var edgeItems = [];
+        Object.keys(attackMapping).forEach(function (attackId) {
+          var groups = attackMapping[attackId];
+          ['k', 'c', 'g'].forEach(function (bucket) {
+            groups[bucket].forEach(function (nodeId) {
+              edgeItems.push(edge(nodeId, attackId));
+            });
+          });
+        });
+        var edges = new vis.DataSet(edgeItems);
+
+        var network = new vis.Network(
+          container,
+          { nodes: nodes, edges: edges },
+          {
+            autoResize: true,
+            layout: { improvedLayout: true },
+            interaction: {
+              hover: true,
+              tooltipDelay: 120,
+              navigationButtons: true,
+              keyboard: true
+            },
+            nodes: {
+              shadow: {
+                enabled: true,
+                color: 'rgba(15, 23, 42, 0.28)',
+                size: 8,
+                x: 0,
+                y: 4
+              }
+            },
+            physics: {
+              enabled: true,
+              barnesHut: {
+                gravitationalConstant: -5200,
+                centralGravity: 0.3,
+                springLength: 130,
+                springConstant: 0.048,
+                damping: 0.55,
+                avoidOverlap: 0.85
+              },
+              stabilization: {
+                enabled: true,
+                iterations: 420,
+                updateInterval: 24,
+                fit: false
+              },
+              minVelocity: 0.75
+            }
+          }
+        );
+
+        function finalizeLayout() {
+          network.setOptions({ physics: { enabled: false } });
+          network.fit({ animation: false });
+          var compactScale = network.getScale() * 0.85;
+          network.moveTo({
+            position: network.getViewPosition(),
+            scale: compactScale,
+            animation: { duration: 420, easingFunction: 'easeInOutQuad' }
+          });
+        }
+
+        function randomizeLayout() {
+          nodes.update(
+            rawNodes.map(function (n) {
+              var pos = randomPositionFor(n.id);
+              return { id: n.id, x: pos.x, y: pos.y, fixed: false };
+            })
+          );
+          network.setOptions({ physics: { enabled: true } });
+          network.once('stabilizationIterationsDone', finalizeLayout);
+          network.stabilize(420);
+        }
+
+        var attackDetails = {
+          atk_as: {
+            title: 'AgentCard Spoofing (AS)',
+            description: 'Manipulates discovery-facing identity metadata to impersonate trusted agents.',
+            bullets: [
+              'Knowledge: K1 (Capability Discovery)',
+              'Capabilities: C1 (Modifying Agent Metadata)',
+              'Goals: G1 (Exploiting Trust), G3 (Data Exfiltration and Manipulation)'
+            ]
+          },
+          atk_cc: {
+            title: 'Capability Cloaking (CC)',
+            description: 'Hides malicious runtime behavior behind seemingly benign advertised capabilities.',
+            bullets: [
+              'Knowledge: K1 (Capability Discovery), K4 (Capability Checks), K6 (Runtime Behavior of Agents)',
+              'Capabilities: C1 (Modifying Agent Metadata), C2 (Exploiting Protocol Weaknesses)',
+              'Goals: G1 (Exploiting Trust), G3 (Data Exfiltration and Manipulation), G4 (Undetected Malicious Actions)'
+            ]
+          },
+          atk_co: {
+            title: 'Cycle Overflow (CO)',
+            description: 'Creates cyclic orchestration patterns to destabilize task processing.',
+            bullets: [
+              'Knowledge: K2 (Task Orchestration), K3 (Task Dependencies)',
+              'Capabilities: C2 (Exploiting Protocol Weaknesses), C4 (Lack of Input Validation)',
+              'Goals: G2 (Disruption), G5 (Resource Exhaustion)'
+            ]
+          },
+          atk_hotf: {
+            title: 'Half-Open Task Flooding (HOTF)',
+            description: 'Floods systems with unfinished tasks that consume orchestration resources.',
+            bullets: [
+              'Knowledge: K2 (Task Orchestration), K6 (Runtime Behavior of Agents)',
+              'Capabilities: C2 (Exploiting Protocol Weaknesses), C4 (Lack of Input Validation)',
+              'Goals: G2 (Disruption), G5 (Resource Exhaustion)'
+            ]
+          },
+          atk_asrf: {
+            title: 'Agent-Side Request Forgery (ASRF)',
+            description: 'Forces agents to issue unintended internal requests or callbacks.',
+            bullets: [
+              'Knowledge: K5 (Internal URI), K6 (Runtime Behavior of Agents)',
+              'Capabilities: C3 (Injecting Malicious Content), C4 (Lack of Input Validation)',
+              'Goals: G3 (Data Exfiltration and Manipulation)'
+            ]
+          },
+          atk_atsi: {
+            title: 'Artifact-Triggered Script Injection (ATSI)',
+            description: 'Injects malicious artifact content that executes in downstream agent workflows.',
+            bullets: [
+              'Knowledge: K6 (Runtime Behavior of Agents)',
+              'Capabilities: C3 (Injecting Malicious Content)',
+              'Goals: G3 (Data Exfiltration and Manipulation), G4 (Undetected Malicious Actions)'
+            ]
+          }
+        };
+
+        function resetDetailPanel() {
+          detailTitle.textContent = 'Click a hexagonal attack node to view threat model in detail';
+          detailDescription.textContent = 'Select an attack to view its mapped Knowledge, Capabilities, and Goals elements.';
+          detailList.innerHTML = '';
+        }
+
+        function renderAttackDetails(attackId) {
+          var info = attackDetails[attackId];
+          if (!info) {
+            resetDetailPanel();
+            return;
+          }
+          detailTitle.textContent = info.title;
+          detailDescription.textContent = info.description;
+          detailList.innerHTML = '';
+          info.bullets.forEach(function (item) {
+            var li = document.createElement('li');
+            li.textContent = item;
+            detailList.appendChild(li);
+          });
+        }
+
+        resetDetailPanel();
+
+        var selectedAttackId = null;
+
+        network.on('click', function (params) {
+          if (!params.nodes.length) {
+            selectedAttackId = null;
+            network.unselectAll();
+            resetDetailPanel();
+            return;
+          }
+
+          var nodeId = params.nodes[0];
+          var clickedNode = nodes.get(nodeId);
+          if (!clickedNode || clickedNode.kind !== 'attack') {
+            selectedAttackId = null;
+            renderAttackDetails(null);
+            return;
+          }
+
+          if (selectedAttackId === nodeId) {
+            selectedAttackId = null;
+            network.unselectAll();
+            resetDetailPanel();
+            return;
+          }
+
+          selectedAttackId = nodeId;
+          renderAttackDetails(nodeId);
+          var connected = network.getConnectedNodes(nodeId);
+          network.selectNodes([nodeId].concat(connected), false);
+          network.focus(nodeId, {
+            scale: 1.05,
+            animation: { duration: 380, easingFunction: 'easeInOutQuad' }
+          });
+        });
+
+        network.on('hoverNode', function () {
+          container.style.cursor = 'pointer';
+        });
+        network.on('blurNode', function () {
+          container.style.cursor = 'grab';
+        });
+
+        randomizeLayout();
+
+        window.addEventListener('pageshow', function (event) {
+          if (event.persisted) {
+            randomizeLayout();
+          }
+        });
+      })();
+    </script>
   </div>
 </section>
 
